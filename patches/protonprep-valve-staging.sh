@@ -18,6 +18,7 @@ apply_all_in_dir() {
     pushd dxvk
     git reset --hard HEAD
     git clean -xdf
+    patch -Np1 < ../patches/dxvk/layered-overlay-dxvk.patch
     popd
 
     pushd vkd3d-proton
@@ -30,16 +31,16 @@ apply_all_in_dir() {
     git clean -xdf
     popd
 
-    pushd gstreamer
-    git reset --hard HEAD
-    git clean -xdf
-    echo "GSTREAMER: fix for unclosable invisible wayland opengl windows in taskbar"
-    apply_all_in_dir "../patches/gstreamer/"
-    popd
-
     pushd protonfixes
     git reset --hard HEAD
     git clean -xdf
+    popd
+
+    pushd wineopenxr
+    git checkout .
+    git clean -xdf
+    echo "WINEOPENXR: patch wineopenxr so it can be built as part of wine"
+    apply_all_in_dir "../patches/wineopenxr/"
     popd
 
 ### END PREP SECTION ###
@@ -61,13 +62,15 @@ apply_all_in_dir() {
 
 ### (2-2) EM-10/WINE-WAYLAND PATCH SECTION ###
 
+    echo "WINE: -WINEOPENXR- copy files into wine"
+    mkdir -p dlls/wineopenxr
+    cp -R ../wineopenxr/* dlls/wineopenxr/
 
     echo "WINE: -CUSTOM- ETAASH WINE-WAYLAND+ PATCHES"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-wayland/"
+   apply_all_in_dir "../patches/wine-hotfixes/wine-wayland/"
 
-    echo "WINE: ntsync hotfix from paul"
-    apply_patch "../patches/proton/0001-fixup-ntdll-Wait-for-thread-suspension-in-NtSuspendT.patch"
-
+    echo "WINE: -CUSTOM- DWPROTON PATCHES"
+   apply_all_in_dir "../patches/wine-hotfixes/dw-proton/"
 
 ### END EM-10/WINE-WAYLAND PATCH SECTION ###
 
@@ -76,117 +79,80 @@ apply_all_in_dir() {
     echo "WINE: -STAGING- applying staging patches"
 
     ../wine-staging/staging/patchinstall.py DESTDIR="." --all --no-autoconf\
-    -W winex11-_NET_ACTIVE_WINDOW \
-    -W winex11-WM_WINDOWPOSCHANGING \
-    -W user32-alttab-focus \
-    -W winex11-MWM_Decorations \
     -W server-Signal_Thread \
-    -W ntdll-Junction_Points \
     -W server-Stored_ACLs \
     -W server-File_Permissions \
     -W kernel32-CopyFileEx \
-    -W shell32-Progress_Dialog \
-    -W shell32-ACE_Viewer \
     -W dbghelp-Debug_Symbols \
-    -W ntdll-Syscall_Emulation \
-    -W eventfd_synchronization \
+    -W version-VerQueryValue \
+    -W mf_http_support \
     -W server-PeekMessage \
-    -W server-Realtime_Priority \
     -W msxml3-FreeThreadedXMLHTTP60 \
     -W ntdll-ForceBottomUpAlloc \
     -W ntdll-NtDevicePath \
-    -W ntdll_reg_flush \
     -W user32-rawinput-mouse \
     -W user32-recursive-activation \
-    -W d3dx11_43-D3DX11CreateTextureFromMemory \
     -W d3dx9_36-D3DXStubs \
     -W wined3d-zero-inf-shaders \
     -W ntdll-RtlQueryPackageIdentity \
+    -W vkd3d-latest \
     -W loader-KeyboardLayouts \
+    -W ntdll-Syscall_Emulation \
+    -W ntdll_reg_flush \
     -W ntdll-Hide_Wine_Exports \
     -W kernel32-Debugger \
     -W ntdll-ext4-case-folder \
-    -W user32-FlashWindowEx \
     -W winex11-Window_Style \
-    -W winex11.drv-Query_server_position \
     -W wininet-Cleanup \
-    -W cryptext-CryptExtOpenCER \
-    -W wineboot-ProxySettings \
-    -W version-VerQueryValue \
-    -W setupapi-DiskSpaceList \
-    -W mmsystem.dll16-MIDIHDR_Refcount \
-    -W vcomp_for_dynamic_init_i8 \
     -W winex11-ime-check-thread-data \
     -W winex11-Fixed-scancodes \
-    -W Staging \
-    -W vkd3d-latest
+    -W Staging
 
     # NOTE: Some patches are applied manually because they -do- apply, just not cleanly, ie with patch fuzz.
     # A detailed list of why the above patches are disabled is listed below:
 
-    # winex11-_NET_ACTIVE_WINDOW - Causes origin to freeze
-    # winex11-WM_WINDOWPOSCHANGING - Causes origin to freeze
-    # user32-alttab-focus - relies on winex11-_NET_ACTIVE_WINDOW -- may be able to be added now that EA Desktop has replaced origin?
-    # winex11-MWM_Decorations - not compatible with fullscreen hack
     # server-Signal_Thread - breaks steamclient for some games -- notably DBFZ
-    # ntdll-Junction_Points - breaks CEG drm
     # server-Stored_ACLs - requires ntdll-Junction_Points
     # server-File_Permissions - requires ntdll-Junction_Pointsv
     # kernel32-CopyFileEx - breaks various installers
-    # shell32-Progress_Dialog - relies on kernel32-CopyFileEx
-    # shell32-ACE_Viewer - adds a UI tab, not needed, relies on kernel32-CopyFileEx
     # dbghelp-Debug_Symbols - Ubisoft Connect games (3/3 I had installed and could test) will crash inside pe_load_debug_info function with this enabled
-    # mmsystem.dll16-MIDIHDR_Refcount - triggers Werror
-    # vcomp_for_dynamic_init_i8 - triggers Werror
-    # winex11-ime-check-thread-data - triggers Werror
-    # winex11-Fixed-scancodes - needs winex11-ime-check-thread-data
+    # version-VerQueryValue - just a test and doesn't apply cleanly. not relevant for gaming
+    # mf_http_support - disabled in favor of custom ffmpeg backend video playback solution
 
-    # ntdll-Syscall_Emulation - already applied
-    # eventfd_synchronization - already applied
     # server-PeekMessage - already applied
-    # server-Realtime_Priority - already applied
     # msxml3-FreeThreadedXMLHTTP60 - already applied
     # ntdll-ForceBottomUpAlloc - already applied
     # ntdll-NtDevicePath - already applied
-    # ntdll_reg_flush - already applied
     # user32-rawinput-mouse - already applied
     # user32-recursive-activation - already applied
-    # d3dx11_43-D3DX11CreateTextureFromMemory - already applied
     # d3dx9_36-D3DXStubs - already applied
     # wined3d-zero-inf-shaders - already applied
     # ntdll-RtlQueryPackageIdentity - already applied
-    # version-VerQueryValue - just a test and doesn't apply cleanly. not relevant for gaming
     # vkd3d-latest - already applied
+    # loader-KeyboardLayouts - already applied
+    # ntdll-Syscall_Emulation - already applied
+    # ntdll_reg_flush - already applied
 
-    # applied manually:
-    # ** loader-KeyboardLayouts - note -- always use and/or rebase this --  needed to prevent Overwatch huge FPS drop
-    # ntdll-Hide_Wine_Exports
-    # kernel32-Debugger
-    # ntdll-ext4-case-folder
-    # user32-FlashWindowEx
-    # winex11-Fixed-scancodes
-    # winex11-Window_Style
-    # winex11-ime-check-thread-data
-    # winex11.drv-Query_server_position
-    # wininet-Cleanup
-    # Staging
+    # ntdll-Hide_Wine_Exports - applied manually
+    # kernel32-Debugger - applied manually
+    # ntdll-ext4-case-folder - applied manually
+    # winex11-Window_Style - applied manually
+    # wininet-Cleanup - applied manually
+    # Staging - applied manually
+    # winex11-ime-check-thread-data - applied manually, needed rebase
+    # winex11-Fixed-scancodes - applied manually, needed rebase
 
-    # rebase and applied manually:
-    # ** loader-KeyboardLayouts - note -- always use and/or rebase this --  needed to prevent Overwatch huge FPS drop
-    # cryptext-CryptExtOpenCER
-    # wineboot-ProxySettings
-
+    # winex11-WM_WINDOWPOSCHANGING - Causes origin to freeze -- currently also disabled in upstream staging
+    # ntdll-Junction_Points - breaks CEG drm -- currently also disabled in upstream staging
+    # shell32-Progress_Dialog - relies on kernel32-CopyFileEx -- currently also disabled in upstream staging
+    # shell32-ACE_Viewer - adds a UI tab, not needed, relies on kernel32-CopyFileEx -- currently also disabled in upstream staging
     # dinput-joy-mappings - disabled in favor of proton's gamepad patches -- currently also disabled in upstream staging
     # mfplat-streaming-support -- interferes with proton's mfplat -- currently also disabled in upstream staging
     # wined3d-SWVP-shaders -- interferes with proton's wined3d -- currently also disabled in upstream staging
     # wined3d-Indexed_Vertex_Blending -- interferes with proton's wined3d -- currently also disabled in upstream staging
-    # setupapi-DiskSpaceList -- upstream commits were brought in for dualsense fixes, the staging patches are no longer needed
-
-    echo "WINE: -STAGING- loader-KeyboardLayouts manually applied"
-    apply_all_in_dir "../wine-staging/patches/loader-KeyboardLayouts/"
 
     echo "WINE: -STAGING- ntdll-Hide_Wine_Exports manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/staging/ntdll-Hide_Wine_Exports/"
+    apply_all_in_dir "../wine-staging/patches/ntdll-Hide_Wine_Exports/"
 
     echo "WINE: -STAGING- kernel32-Debugger manually applied"
     apply_all_in_dir "../wine-staging/patches/kernel32-Debugger/"
@@ -194,26 +160,33 @@ apply_all_in_dir() {
     echo "WINE: -STAGING- ntdll-ext4-case-folder manually applied"
     apply_all_in_dir "../wine-staging/patches/ntdll-ext4-case-folder/"
 
-    echo "WINE: -STAGING- user32-FlashWindowEx manually applied"
-    apply_all_in_dir "../wine-staging/patches/user32-FlashWindowEx/"
-
     echo "WINE: -STAGING- winex11-Window_Style manually applied"
     apply_all_in_dir "../wine-staging/patches/winex11-Window_Style/"
-
-    echo "WINE: -STAGING- winex11.drv-Query_server_position manually applied"
-    apply_all_in_dir "../wine-staging/patches/winex11.drv-Query_server_position/"
 
     echo "WINE: -STAGING- wininet-Cleanup manually applied"
     apply_all_in_dir "../wine-staging/patches/wininet-Cleanup/"
 
-    echo "WINE: -STAGING- cryptext-CryptExtOpenCER manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/staging/cryptext-CryptExtOpenCER/"
-
-    echo "WINE: -STAGING- wineboot-ProxySettings manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/staging/wineboot-ProxySettings/"
-
     echo "WINE: -STAGING- Staging manually applied"
     apply_all_in_dir "../wine-staging/patches/Staging/"
+
+    echo "WINE: -STAGING- winex11-ime-check-thread-data manually applied"
+    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/winex11-ime-check-thread-data/"
+
+    echo "WINE: -STAGING- winex11-Fixed-scancodes manually applied"
+    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/winex11-Fixed-scancodes/"
+
+    echo "WINE: -STAGING- comctl32_animate_avi cleanup -Werror"
+    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/comctl32_animate_avi/"
+
+    echo "WINE: -STAGING- d3drm-starwars cleanup -Werror"
+    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/d3drm-starwars/"
+
+    echo "WINE: -STAGING- windowscodecs-TIFF_Support cleanup -Werror"
+    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/windowscodecs-TIFF_Support/"
+
+    echo "WINE: -STAGING- mmsystem.dll16-MIDIHDR_Refcount cleanup -Werror"
+    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/mmsystem.dll16-MIDIHDR_Refcount/"
+
 
 ### END WINE STAGING APPLY SECTION ###
 
@@ -235,14 +208,17 @@ apply_all_in_dir() {
     apply_patch "../patches/game-patches/silence-starcitizen-unsupported-os.patch"
     apply_patch "../patches/game-patches/eac_60101_timeout.patch"
 
+    echo "WINE: -GAME FIXES- add TBH: Task Bar Hero fixes"
+    apply_patch "../patches/game-patches/layered-overlay-wine.patch"
 
-    # https://github.com/JacKeTUs/wine/commits/lmu-d2d1-tinkering
-    echo "WINE: -GAME FIXES- add le mans ultimate patches"
-    apply_patch "../patches/game-patches/lemansultimate-gameinput.patch"
+    echo "WINE: -GAME FIXES- add fixes Guilty Gear Accent Core Plus R intro video (win32u related)"
+    apply_patch "../patches/game-patches/0001-win32u-Avoid-zero-WM_ACTIVATEAPP-lparam-on-first-for.patch"
 
 ### END GAME PATCH SECTION ###
 
 ### (2-5) WINE HOTFIX/BACKPORT SECTION ###
+    echo "WINE: -HOTFIX- Fix Smart Tee negotiation and V4L WoW64 media type marshaling"
+    apply_all_in_dir "../patches/wine-hotfixes/qcap-dshow-fixes/"
 
 ### END WINE HOTFIX/BACKPORT SECTION ###
 
@@ -264,10 +240,6 @@ apply_all_in_dir() {
     echo "WINE: -PENDING- ncrypt: NCryptDecrypt implementation (PSN Login for Ghost of Tsushima)"
     apply_patch "../patches/wine-hotfixes/pending/NCryptDecrypt_implementation.patch"
 
-    #https://github.com/GloriousEggroll/proton-ge-custom/issues/283
-    echo "WINE: -PENDING- quartz: backport to allow clannad videos to work"
-    apply_patch "../patches/wine-hotfixes/pending/8848.patch"
-
     #https://github.com/Open-Wine-Components/umu-protonfixes/pull/370#issuecomment-3368898328
     echo "WINE: -PENDING- add nvidia DLSS upgrade patch"
     apply_patch "../patches/wine-hotfixes/pending/0001-HACK-kernelbase-allow-overriding-dlls-for-DLSS-XeSS-.patch"
@@ -277,24 +249,18 @@ apply_all_in_dir() {
     echo "WINE: -PENDING- add Duet Knight Abyss fixes"
     apply_patch "../patches/wine-hotfixes/pending/0009-HACK-kernel32-Spoof-GetProcAddress-of-KiUserApcDispa.patch"
 
-    # https://github.com/StephenCWills/wine/commits/akiba/
-    # https://github.com/ValveSoftware/Proton/issues/651#issuecomment-3564552601
-    echo "WINE: -PENDING- add akibas trip undead & undressed patches"
-    apply_patch "../patches/wine-hotfixes/pending/akibastrip-video-voice.patch"
-
     # Separate OpenXR steam reliance
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/214
     echo "WINE: -PENDING- add OpenXR patches"
     apply_patch "../patches/wine-hotfixes/pending/0001-decouple-wineopenxr-from-steamvr-and-integrate-it-in.patch"
 
+    echo "WINE: -CUSTOM- Dynamically relocate .exes, improving compatibility with modding / hooking tools"
+    apply_patch "../patches/wine-hotfixes/pending/0001-server-Dynamically-relocate-.exes-by-default-too.patch"
 
 ### END WINE PENDING UPSTREAM SECTION ###
 
 
 ### (2-7) PROTON-GE ADDITIONAL CUSTOM PATCHES ###
-
-    echo "WINE: Add winepulse fast polling env variable"
-    apply_patch "../patches/proton/winepulse-fast-polling.patch"
 
     echo "WINE: Add an env variable to override channel count in winealsa"
     apply_patch "../patches/proton/winealsa-override-channel-count.patch"
@@ -308,27 +274,18 @@ apply_all_in_dir() {
     echo "WINE: -CUSTOM- Add nls to tools"
     apply_patch "../patches/proton/build_failure_prevention-add-nls.patch"
 
-    echo "WINE: -CUSTOM Add options to disable proton media converter."
-    apply_patch "../patches/proton/add-envvar-to-gate-media-converter.patch"
-
-    echo "WINE: -CUSTOM- Downgrade MESSAGE to TRACE to remove write_watches spam"
-    apply_patch "../patches/proton/0001-ntdll-Downgrade-using-kernel-write-watches-from-MESS.patch"
-
     echo "WINE: -CUSTOM- Add WINE_NO_WM_DECORATION option to disable window decorations so that borders behave properly"
     apply_patch "../patches/proton/0001-win32u-add-env-switch-to-disable-wm-decorations.patch"
-
-    echo "WINE: -CUSTOM- Fix a crash in ID2D1DeviceContext if no target is set"
-    apply_patch "../patches/proton/fix-a-crash-in-ID2D1DeviceContext-if-no-target-is-set.patch"
-
-    echo "WINE: -CUSTOM- Add envvar to allow method=automatic to be set for video orientation in gstreamer"
-    apply_patch "../patches/proton/proton-use_winegstreamer_and_set_orientation-PROTON_MEDIA_USE_GST-PROTON_GST_VIDEO_ORIENTATION.patch"
 
     # https://steamcommunity.com/app/2074920/discussions/0/604168604057160448/
     echo "WINE: --CUSTOM-- add WINE_HOSTBLOCK envvar to allow working around some problematic anticheats (notably eac)"
     apply_patch "../patches/proton/wine_host_block_envvar.patch"
 
-    echo "WINE: -CUSTOM- Dynamically relocate .exes, improving compatibility with modding / hooking tools"
-    apply_patch "../patches/proton/0001-server-Dynamically-relocate-.exes-by-default-too.patch"
+    echo "WINE: mutter -> cinnamon detection patch for winex11"
+    apply_patch "../patches/proton/winex11-mutter-cinnamon.patch"
+
+    echo "WINE: -HOTFIX- Implement GE-Proton ffmpeg + winedmo only video playback rework patches"
+    apply_all_in_dir "../patches/ge-video-rework/"
 
     echo "WINE: RUN AUTOCONF TOOLS/MAKE_REQUESTS"
     autoreconf -f
