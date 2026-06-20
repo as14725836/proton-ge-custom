@@ -82,3 +82,9 @@
 [submodule "libsoup"]
 	path = libsoup
 	url = https://github.com/GNOME/libsoup.git
+[submodule "xz"]
+	path = xz
+	url = https://github.com/tukaani-project/xz.git
+[submodule "d7vk"]
+	path = d7vk
+	url = https://github.com/WinterSnowfall/d7vk.git

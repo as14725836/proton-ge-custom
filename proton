@@ -1026,6 +1026,46 @@ class CompatData:
                     fname = os.path.join(fonts_dir, 'alt', font)
                 self.create_symlink(lname, fname)
 
+    def remove_prefix_file(self, path):
+        path = os.path.join(self.prefix_dir, path)
+        if file_exists(path, follow_symlinks=False):
+            os.remove(path)
+        if file_exists(path + ".debug", follow_symlinks=False):
+            os.remove(path + ".debug")
+
+    def setup_ddraw(self, use_d7vk):
+        ddraw_dlls = (
+                "drive_c/windows/system32/ddraw.dll",
+                "drive_c/windows/system32/ddraw_.dll",
+                "drive_c/windows/syswow64/ddraw.dll",
+                "drive_c/windows/syswow64/ddraw_.dll",
+        )
+        wine_ddraw64 = g_proton.arch_pe_dir("wine", False) + "ddraw.dll"
+        wine_ddraw32 = g_proton.arch_pe_dir("wine", True) + "ddraw.dll"
+        d7vk_ddraw = g_proton.arch_pe_dir("wine/d7vk", True) + "ddraw.dll"
+
+        for dll in ddraw_dlls:
+            self.remove_prefix_file(dll)
+
+        try_copy(wine_ddraw64, "drive_c/windows/system32/ddraw.dll",
+                prefix=self.prefix_dir, link_debug=True)
+
+        if use_d7vk:
+            if not file_exists(d7vk_ddraw, follow_symlinks=True):
+                log("D7VK requested but ddraw.dll was not found at %s" % d7vk_ddraw)
+                try_copy(wine_ddraw32, "drive_c/windows/syswow64/ddraw.dll",
+                        prefix=self.prefix_dir, link_debug=True)
+                return
+
+            try_copy(wine_ddraw32, "drive_c/windows/syswow64/ddraw_.dll",
+                    prefix=self.prefix_dir, link_debug=True)
+            try_copy(d7vk_ddraw, "drive_c/windows/syswow64/ddraw.dll",
+                    prefix=self.prefix_dir, link_debug=True)
+            append_to_env_str(g_session.env, "WINEDLLOVERRIDES", "ddraw=n,b", ";")
+        else:
+            try_copy(wine_ddraw32, "drive_c/windows/syswow64/ddraw.dll",
+                    prefix=self.prefix_dir, link_debug=True)
+
     def migrate_user_paths(self):
         #move winxp-style paths to vista+ paths. we can't do this in
         #upgrade_pfx because Steam may drop cloud files here at any time.
@@ -1087,9 +1127,11 @@ class CompatData:
             self.migrate_user_paths()
 
             if not file_exists(self.prefix_dir + "/dosdevices/c:", follow_symlinks=False):
+                os.makedirs(f"{self.prefix_dir}/dosdevices", exist_ok=True)
                 os.symlink("../drive_c", self.prefix_dir + "/dosdevices/c:")
 
             if not file_exists(self.prefix_dir + "/dosdevices/z:", follow_symlinks=False):
+                os.makedirs(f"{self.prefix_dir}/dosdevices", exist_ok=True)
                 os.symlink("/", self.prefix_dir + "/dosdevices/z:")
 
             # collect configuration info
@@ -1490,8 +1532,6 @@ def default_compat_config():
                 "2067160", #Simulakros
                 "2621010", #Simulakros Demo
                 "368500", #Assassin's Creed Syndicate
-                "1524630", #KeepUp Survival
-                "1233570",
                 ]:
             try:
                 with open('/proc/modules') as f:
@@ -1590,6 +1630,7 @@ class Session:
     def __init__(self):
         self.log_file = None
         self.env = dict(os.environ)
+        self.xrandr_bin = g_proton.xrandr_bin
         self.dlloverrides = {
                 "steam.exe": "b", #always use our special built-in steam.exe
                 "dotnetfx35.exe": "b", #replace the broken installer, as does Windows
@@ -1672,9 +1713,6 @@ class Session:
         if "WINEDLLPATH" in os.environ:
             dllpaths.append(os.environ["WINEDLLPATH"])
         self.env["WINEDLLPATH"] = ':'.join(dllpaths)
-
-        self.env["GST_PLUGIN_SYSTEM_PATH_1_0"] = ':'.join([lib + "/gstreamer-1.0" for lib in ld_library_path])
-        self.env["WINE_GST_REGISTRY_DIR"] = g_compatdata.path("gstreamer-1.0/")
 
         if "STEAM_COMPAT_MEDIA_PATH" in os.environ:
             old_audiofoz_path = os.environ["STEAM_COMPAT_MEDIA_PATH"] + "/audio.foz"
@@ -1796,7 +1834,7 @@ class Session:
     def get_primary_monitor(self):
         try:
             result = subprocess.run(
-                [g_proton.xrandr_bin],
+                [self.xrandr_bin],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -2158,11 +2196,6 @@ class Session:
             # TODO: Needs retest with proton 11
             if "DISPLAY" in self.env:
                 del self.env["DISPLAY"]
-        else:
-            # X11 specific changes to increase compat
-            # Surfaceless supports less formats than x11
-            if "GL_GST_WINDOW" not in self.env:
-                self.env["GST_GL_WINDOW"] = "x11"
 
         # Use SDL backend for inputs instead of hidraw/Steam Input.
         if "sdlinput" in self.compat_config:
@@ -2402,6 +2435,9 @@ if __name__ == "__main__":
     protonfixes.setup_mount_drives(setup_dir_drive)
     protonfixes.winetricks(g_session.env, g_proton.wine_bin, g_proton.wineserver_bin)
     protonfixes.execute()
+
+    g_compatdata.setup_ddraw("PROTON_USE_D7VK" in g_session.env
+            and nonzero(g_session.env["PROTON_USE_D7VK"]))
 
     #determine mode
     rc = 0
