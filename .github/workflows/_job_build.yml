@@ -59,6 +59,36 @@ jobs:
           patch -Np1 -i ./.github/patches/0001-build-strip-binaries-early.patch
           mkdir ./build
 
+      # 👇 新增：修复 Termux 路径问题
+      - name: Fix Termux paths in source
+        run: |
+          echo "::group::修复 Termux 路径问题（源码级别）"
+          
+          echo "修改前 /tmp 出现次数："
+          grep -r "/tmp" --include="*.c" --include="*.h" --include="*.in" --include="*.spec" . 2>/dev/null | wc -l || true
+          
+          echo "开始替换 /tmp 为 /data/data/com.termux/files/usr/tmp..."
+          
+          # 修复所有源码中的 /tmp 路径
+          find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.in" -o -name "*.spec" \) \
+            -exec grep -l "/tmp" {} \; 2>/dev/null | xargs -r sed -i 's|/tmp/|/data/data/com.termux/files/usr/tmp/|g'
+          
+          # 修复 server 目录
+          if [ -d "server" ]; then
+            find server -type f \( -name "*.c" -o -name "*.h" \) \
+              -exec sed -i 's|"/tmp"|"/data/data/com.termux/files/usr/tmp"|g' {} + 2>/dev/null || true
+          fi
+          
+          # 修复特定文件
+          for file in file.c loader.c server.c; do
+            find . -name "$file" -exec sed -i 's|"/tmp"|"/data/data/com.termux/files/usr/tmp"|g' {} + 2>/dev/null || true
+          done
+          
+          echo "修改后 /tmp 出现次数："
+          grep -r "/tmp" --include="*.c" --include="*.h" --include="*.in" --include="*.spec" . 2>/dev/null | wc -l || true
+          
+          echo "::endgroup::"
+
       - name: Configure
         working-directory: ./build
         run: |
@@ -88,4 +118,3 @@ jobs:
         with:
           name: ${{ inputs.name }}.sha512sum
           path: ./build/${{ inputs.name }}.sha512sum
-
